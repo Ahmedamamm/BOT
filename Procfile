@@ -1,1 +1,1 @@
-web: ./install_playwright.sh && python main.py
+web: bash install_playwright.sh && python main.py
