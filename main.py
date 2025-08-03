@@ -30,6 +30,9 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 import json
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+import logging
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -559,81 +562,78 @@ async def delayed_notify_user(user_id: int):
     except Exception as e:
         logging.error(f"Ошибка при отправке напоминания пользователю {user_id}: {e}")
 
+# أسماء الخطوات
+step_names = {
+    "full_name": "📝 Ввод ФИО",
+    "phone": "📞 Номер телефона",
+    "passport_photo": "📸 Фото паспорта",
+    "medical_yes": "✅ Медкнижка: Да",
+    "medical_no": "❌ Медкнижка: Нет",
+    "fluorography_yes": "✅ Флюорография: Да",
+    "fluorography_no": "❌ Флюорография: Нет",
+    "inn_yes": "✅ Есть ИНН",
+    "inn_no": "❌ Нет ИНН",
+    "inn": "💳 Проверка ИНН",
+    "register_yes": "✅ Зарегистрируется",
+    "register_no": "❌ Не будет регистрироваться",
+    "registered_done": "✅ Подтвердил регистрацию",
+    "registration_failed": "❌ Не смог зарегистрироваться"
+}
 
-async def send_weekly_report():
-    # await asyncio.sleep(0)
-    while True:
-        try:
-            step_names = {
-                "full_name": "📝 Ввод ФИО",
-                "phone": "📞 Номер телефона",
-                "passport_photo": "📸 Фото паспорта",
-                "medical_yes": "✅ Медкнижка: Да",
-                "medical_no": "❌ Медкнижка: Нет",
-                "fluorography_yes": "✅ Флюорография: Да",
-                "fluorography_no": "❌ Флюорография: Нет",
-                "inn_yes": "✅ Есть ИНН",
-                "inn_no": "❌ Нет ИНН",
-                "inn": "💳 Проверка ИНН",
-                "register_yes": "✅ Зарегистрируется",
-                "register_no": "❌ Не будет регистрироваться",
-                "registered_done": "✅ Подтвердил регистрацию",
-                "registration_failed": "❌ Не смог зарегистрироваться"
-            }
+# الوظيفة اللي تبعت التقرير
+async def send_daily_report():
+    try:
+        step_counts = {step: users_collection.count_documents({"registration_step": step}) for step in step_names.keys()}
 
-            step_counts = {step: users_collection.count_documents({"registration_step": step}) for step in step_names.keys()}
+        wb = Workbook()
+        ws_summary = wb.active
+        ws_summary.title = "Отчет"
+        ws_summary.append(["Шаг", "Описание", "Кол-во"])
+        for step, desc in step_names.items():
+            ws_summary.append([step, desc, step_counts.get(step, 0)])
 
-            # إنشاء ملف Excel
-            wb = Workbook()
-            ws_summary = wb.active
-            ws_summary.title = "Отчет"
+        ws_detail = wb.create_sheet("Пользователи")
+        ws_detail.append(["ID", "Имя", "Телефон", "ИНН", "Медкнижка", "Флюорография", "Шаг регистрации"])
 
-            # جدول 1: خلاصة المراحل
-            ws_summary.append(["Шаг", "Описание", "Кол-во"])
-            for step, desc in step_names.items():
-                ws_summary.append([step, desc, step_counts.get(step, 0)])
+        all_users = users_collection.find()
+        for user in all_users:
+            ws_detail.append([
+                user.get("_id", ""),
+                user.get("full_name", ""),
+                user.get("phone", ""),
+                user.get("inn", ""),
+                "Да" if user.get("medical_book") else "Нет",
+                "Да" if user.get("fluorography") else "Нет",
+                step_names.get(user.get("registration_step", ""), user.get("registration_step", ""))
+            ])
 
-            # جدول 2: بيانات كل المستخدمين
-            ws_detail = wb.create_sheet("Пользователи")
-            ws_detail.append(["ID", "Имя", "Телефон", "ИНН", "Медкнижка", "Флюорография", "Шаг регистрации"])
+        with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            wb.save(tmp.name)
+            tmp.seek(0)
 
-            all_users = users_collection.find()
-            for user in all_users:
-                ws_detail.append([
-                    user.get("_id", ""),
-                    user.get("full_name", ""),
-                    user.get("phone", ""),
-                    user.get("inn", ""),
-                    "Да" if user.get("medical_book") else "Нет",
-                    "Да" if user.get("fluorography") else "Нет",
-                    step_names.get(user.get("registration_step", ""), user.get("registration_step", ""))
-                ])
+            await bot.send_document(
+                chat_id=1085716060,
+                document=FSInputFile(tmp.name, filename="full_daily_report.xlsx"),
+                caption="📊 Подробный отчет по регистрации (2 листа)"
+            )
 
-            # حفظ الملف
-            with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                wb.save(tmp.name)
-                tmp.seek(0)
+    except Exception as e:
+        logging.error(f"Ошибка при создании Excel: {e}")
 
-                await bot.send_document(
-                    chat_id=1085716060,
-                    document=FSInputFile(tmp.name, filename="full_weekly_report.xlsx"),
-                    caption="📊 Подробный отчет по регистрации (2 листа)"
-                )
+scheduler = AsyncIOScheduler()
 
-        except Exception as e:
-            logging.error(f"Ошибка при создании Excel: {e}")
-
-        await asyncio.sleep(60 * 60 * 24)  # كل 7 أيام 7 * 24 * 60 * 60
 
 async def main():
+    # إعداد الأوامر
     await set_bot_commands(bot)
-    # شغّل المهمة في الخلفية
-    asyncio.create_task(send_weekly_report())
-    # شغّل البوت (التشغيل الأساسي)
+
+    # جدولة إرسال التقرير يوميًا الساعة 22:00
+    scheduler.add_job(send_daily_report, CronTrigger(hour=22, minute=0))
+    scheduler.start()
+
+    # بدء تشغيل البوت
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    async def main():
-        await dp.start_polling(bot)
-
-asyncio.run(main())
+    import asyncio
+    asyncio.run(main())
