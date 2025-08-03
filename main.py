@@ -558,7 +558,7 @@ async def delayed_notify_user(user_id: int):
     try:
         user = users_collection.find_one({"_id": user_id})
         if user and user.get("registration_step") != "finish":
-            await bot.send_message(user_id, "⌛ Вы не завершили регистрацию. Мы всё равно добавим вас в список работников. Спасибо!")
+            await bot.send_message(user_id, "⌛ Если вы не завершите регистрацию, мы вышлем вам ссылку на группу для работников. Спасибо!\nhttps://chat.whatsapp.com/LKOL6wdu3R7KnLETuG0eiE")
     except Exception as e:
         logging.error(f"Ошибка при отправке напоминания пользователю {user_id}: {e}")
 
