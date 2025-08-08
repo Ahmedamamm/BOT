@@ -612,7 +612,7 @@ async def send_daily_report():
             tmp.seek(0)
 
             await bot.send_document(
-                chat_id=1085716060,
+                chat_id=1247026244,
                 document=FSInputFile(tmp.name, filename="full_daily_report.xlsx"),
                 caption="📊 Подробный отчет по регистрации (2 листа)"
             )
